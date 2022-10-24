@@ -5,7 +5,6 @@
 #include "boardconf.h"
 #include "BLE.h"
 #include "file_io.h"
-
 #include "clock.h"
 #include "MjpegClass.h"
 
@@ -20,11 +19,11 @@ uint8_t playMode = 0;                     // 0顺序循环 1单个循环 2随机
 uint16_t brightness = DEFAULT_BRIGHTNESS; //屏幕亮度
 int16_t breath_step = 5;                  //亮度步长
 
-String yan = "bcfhlsy"; //神之眼文件名序列
+String yan = "bcfhlsy";                         //神之眼文件名序列，如要自己定义请改这里和上面的FILE_COUNT
 OneButton btn = OneButton(BTN_PIN, true, true); //初始化按键
 
 Arduino_DataBus *bus = new Arduino_HWSPI(TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, TFT_MISO);
-Arduino_GC9A01 *gfx = new Arduino_GC9A01(bus, TFT_RST, 2 /*旋转180度*/, true);
+Arduino_GC9A01 *gfx = new Arduino_GC9A01(bus, TFT_RST, 0 /*默认不旋转了，2为旋转180度*/, true);
 
 static MjpegClass mjpeg;
 
@@ -36,7 +35,7 @@ static lv_color_t *disp_draw_buf;
 static lv_disp_drv_t disp_drv;
 static uint8_t *mjpeg_buf;
 
-uint8_t currMode = 0; // 0神之眼 1时钟
+uint8_t currMode = 0; // 0神之眼 1时钟  2自定义文件（位于SD卡custom目录）
 
 bool isReset = true;
 bool isSDOK = false;
@@ -119,7 +118,7 @@ bool mem_alloc()
         gfx->println("[LVGL] Draw buff allocate failed!");
         return false;
     }
-    mjpeg_buf = (uint8_t *)heap_caps_malloc(MJPEG_BUFFER_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    mjpeg_buf = (uint8_t *)heap_caps_malloc(screenWidth * screenHeight / 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     // mjpeg_buf = (uint8_t *)malloc(MJPEG_BUFFER_SIZE);
     if (!mjpeg_buf)
     {
@@ -137,7 +136,7 @@ void singleClickHandler()
     if (currMode == 0)
     {
         //单击功能只在神之眼模式下有效
-        if (playMode == 0)
+        if (playMode == 0 || playMode == 1)
         {
             if (++currPlay >= EYES_FILE_COUNT)
             {
@@ -156,7 +155,7 @@ void longClickHandler()
     Serial.println("[BTN] Long Click Event");
     isBreak = true;
     isReset = true;
-    if (++currMode > 1)
+    if (++currMode > 2)
     {
         currMode = 0;
     }
@@ -241,12 +240,12 @@ void ble_proc()
     }
     else if (ble_rcv_data[5] == 'm')
     {
-        //切换模式，参数是0 1
+        //切换模式，参数是0 1 2
         String ts = ble_rcv_data.substring(7, 8);
         if (isNumber(ts))
         {
             int aa = ts.toInt();
-            if (aa >= 0 && aa < 2)
+            if (aa >= 0 && aa < 3)
             {
                 currMode = aa;
                 isReset = true;
@@ -338,22 +337,37 @@ void play_loop(void (*playCallback)())
     isBreak = false;
     File mjpegFile;
 #if USE_ESP32S3
-    if(!isSDOK & isFFOK){
+    if (!isSDOK & isFFOK)
+    {
         //当SD卡未就绪而内置flash就绪时，播放内置flash上的单个文件
-        mjpegFile = FFat.open("/yan.mjpeg");
+        mjpegFile = FFat.open("/blankeye", FILE_READ);
     }
     else
     {
-        mjpegFile = SD_MMC.open("/mjpeg/" + String(yan[currPlay]) + ".mjpeg");
+        if (currMode == 2)
+        {
+            mjpegFile = SD_MMC.open("/custom/my.mjpeg", FILE_READ);
+        }
+        else
+        {
+            mjpegFile = SD_MMC.open("/mjpeg/" + String(yan[currPlay]) + ".mjpeg", FILE_READ);
+        }
     }
 #else
-    mjpegFile = SD.open("/mjpeg/" + String(yan[currPlay]) + ".mjpeg", FILE_READ);
+    if (currMode == 2)
+    {
+        mjpegFile = SD.open("/custom/my.mjpeg", FILE_READ);
+    }
+    else
+    {
+        mjpegFile = SD.open("/mjpeg/" + String(yan[currPlay]) + ".mjpeg", FILE_READ);
+    }
 #endif
 
     if (!mjpegFile || mjpegFile.isDirectory())
     {
-        Serial.println("[MJPEG] Failed to open '/mjpeg/" + String(yan[currPlay]) + ".mjpeg' for reading");
-        gfx->println("ERROR: Failed to open '/mjpeg/" + String(yan[currPlay]) + ".mjpeg' for reading");
+        Serial.println("[MJPEG] Failed to open mjpeg file");
+        gfx->println("ERROR: Failed to open mjpeg file");
         delay(10000); // 10秒后重试
     }
     else
@@ -367,7 +381,10 @@ void play_loop(void (*playCallback)())
             mjpeg.drawJpg();
             //跳转蓝牙循环和按键循环
             playCallback();
-            breath_brightness();
+            if (currMode == 0)
+            {
+                breath_brightness();
+            }
             if (isBreak)
             {
                 Serial.println(F("[MJPEG] Video break;"));
@@ -377,19 +394,22 @@ void play_loop(void (*playCallback)())
         Serial.println(F("[MJPEG] Video end"));
         if (!isBreak)
         {
-            //如果正常播放结束，则根据逻辑切换下一个播放文件
-            if (playMode == 0)
+            if (currMode == 0)
             {
-                if (++currPlay >= EYES_FILE_COUNT)
+                //如果正常播放结束，则根据逻辑切换下一个播放文件
+                if (playMode == 0)
                 {
-                    currPlay = 0;
+                    if (++currPlay >= EYES_FILE_COUNT)
+                    {
+                        currPlay = 0;
+                    }
                 }
+                else if (playMode == 2)
+                {
+                    currPlay = random(7);
+                }
+                brightness = 100;
             }
-            else if (playMode == 2)
-            {
-                currPlay = random(7);
-            }
-            brightness = 100;
         }
         mjpegFile.close();
         isBreak = false;
@@ -469,7 +489,7 @@ void loop()
             {
                 myclock.initClock();
             }
-            //disp_free_mem("CLOCK MODE");
+            // disp_free_mem("CLOCK MODE");
         }
         myclock.loop();
         lv_timer_handler();
@@ -489,7 +509,27 @@ void loop()
                 isSDOK = sd_init();
 #endif
             }
-            //disp_free_mem("EYE MODE");
+            // disp_free_mem("EYE MODE");
+        }
+        play_loop(control_loop);
+    }
+    else if (currMode == 2)
+    {
+        //播放自定义文件
+        if (isReset)
+        {
+            isReset = false;
+            brightness = DEFAULT_BRIGHTNESS;
+            ledcWrite(1, brightness); //神之眼的呼吸模式会调整亮度，其他模式需重置亮度
+            if (!isSDOK)
+            {
+
+#if USE_ESP32S3
+                isSDOK = sdmmc_init();
+#else
+                isSDOK = sd_init();
+#endif
+            }
         }
         play_loop(control_loop);
     }

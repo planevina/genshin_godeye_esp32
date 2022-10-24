@@ -6,10 +6,10 @@
 //S3版，如果没有焊接时钟芯片，下面这个也要改为0
 
 //启用RTC时钟
-#define USE_DS1302_RTC 0
+#define USE_DS1302_RTC 1
 
 //使用S3模组
-#define USE_ESP32S3 0
+#define USE_ESP32S3 1
 #if USE_ESP32S3
     #define TFT_MISO 9        //没有实际连接
     #define TFT_SCK 12

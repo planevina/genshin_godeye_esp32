@@ -1,0 +1,2 @@
+仅限platformIO
+C:\Users\你的用户名\.platformio\platforms\espressif32\boards

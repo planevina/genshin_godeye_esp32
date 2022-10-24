@@ -18,6 +18,7 @@ bool isBreak = false;                     //是否播放中断
 uint8_t playMode = 0;                     // 0顺序循环 1单个循环 2随机播放
 uint16_t brightness = DEFAULT_BRIGHTNESS; //屏幕亮度
 int16_t breath_step = 5;                  //亮度步长
+uint8_t currCustomPlay = 0;               //自定义播放的当前索引
 
 String yan = "bcfhlsy";                         //神之眼文件名序列，如要自己定义请改这里和上面的FILE_COUNT
 OneButton btn = OneButton(BTN_PIN, true, true); //初始化按键
@@ -135,7 +136,7 @@ void singleClickHandler()
     Serial.println(currMode);
     if (currMode == 0)
     {
-        //单击功能只在神之眼模式下有效
+        //神之眼模式
         if (playMode == 0 || playMode == 1)
         {
             if (++currPlay >= EYES_FILE_COUNT)
@@ -148,6 +149,14 @@ void singleClickHandler()
             currPlay = random(7);
         }
         isBreak = true;
+    }
+    else if (currMode == 2)
+    {
+        //自定义播放模式，范围0-254
+        if (++currCustomPlay > 254)
+        {
+            currCustomPlay = 0;
+        }
     }
 }
 void longClickHandler()
@@ -286,6 +295,22 @@ void ble_proc()
     {
         ble_sendmsg();
     }
+    else if (ble_rcv_data[5] == 'y')
+    {
+        //自定义播放模式PREV，范围0-254
+        if (currCustomPlay > 0)
+        {
+            --currCustomPlay;
+        }
+    }
+    else if (ble_rcv_data[5] == 'z')
+    {
+        //自定义播放模式NEXT，范围0-254
+        if (++currCustomPlay > 254)
+        {
+            currCustomPlay = 0;
+        }
+    }
     else
     {
         Serial.println("[BLE] No action");
@@ -346,7 +371,12 @@ void play_loop(void (*playCallback)())
     {
         if (currMode == 2)
         {
-            mjpegFile = SD_MMC.open("/custom/my.mjpeg", FILE_READ);
+            mjpegFile = SD_MMC.open("/custom/my" + String(currCustomPlay) + ".mjpeg", FILE_READ);
+            if (!mjpegFile || mjpegFile.isDirectory())
+            {
+                currCustomPlay = 0;
+                mjpegFile = SD_MMC.open("/custom/my" + String(currCustomPlay) + ".mjpeg", FILE_READ);
+            }
         }
         else
         {
@@ -356,7 +386,12 @@ void play_loop(void (*playCallback)())
 #else
     if (currMode == 2)
     {
-        mjpegFile = SD.open("/custom/my.mjpeg", FILE_READ);
+        mjpegFile = SD.open("/custom/my" + String(currCustomPlay) + ".mjpeg", FILE_READ);
+        if (!mjpegFile || mjpegFile.isDirectory())
+        {
+            currCustomPlay = 0;
+            mjpegFile = SD.open("/custom/my" + String(currCustomPlay) + ".mjpeg", FILE_READ);
+        }
     }
     else
     {
@@ -367,8 +402,22 @@ void play_loop(void (*playCallback)())
     if (!mjpegFile || mjpegFile.isDirectory())
     {
         Serial.println("[MJPEG] Failed to open mjpeg file");
-        gfx->println("ERROR: Failed to open mjpeg file");
-        delay(10000); // 10秒后重试
+        gfx->fillScreen(BLACK);
+        gfx->setTextColor(WHITE);
+        gfx->setCursor(20,100);
+        if(currMode == 0 )
+        {
+            gfx->println("No eyes mjpeg file '/mjpeg/b.mjpeg'.");
+            gfx->println("Filename like  'b.mjpeg' 'f.mjpeg'...");
+            gfx->println("Pls copy it to 'mjpeg' folder in TF card and reboot");
+        }
+        else if(currMode==2)
+        {
+            gfx->println("No custom mjpeg file '/custom/my0.mjpeg'.");
+            gfx->println("Filename like 'my0.mjpeg' 'my1.mjpeg'...");
+            gfx->println("Pls copy it to 'custom' folder  in TF card and reboot");
+        }
+        for(;;){}; // 等待重启
     }
     else
     {
@@ -502,7 +551,6 @@ void loop()
             isReset = false;
             if (!isSDOK)
             {
-
 #if USE_ESP32S3
                 isSDOK = sdmmc_init();
 #else
@@ -523,7 +571,6 @@ void loop()
             ledcWrite(1, brightness); //神之眼的呼吸模式会调整亮度，其他模式需重置亮度
             if (!isSDOK)
             {
-
 #if USE_ESP32S3
                 isSDOK = sdmmc_init();
 #else

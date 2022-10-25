@@ -19,15 +19,19 @@ LV_IMG_DECLARE(Horoscope03);
 LV_IMG_DECLARE(Horoscope04);
 LV_IMG_DECLARE(Horoscope05);
 LV_IMG_DECLARE(Horoscope06);
-// LV_IMG_DECLARE(arc_mask);
+LV_IMG_DECLARE(arc_mask);
 
 //定义时分秒指针图像对象
 static lv_obj_t *lvMinute;
 static lv_obj_t *lvHour;
 static lv_obj_t *lvSecond;
-// static lv_obj_t *arc;
-// static lv_style_t arc_style;
+static lv_obj_t *arc;
+static lv_style_t arc_style;
 //bool isCountdown = false;
+static lv_anim_t anim_center_gear;
+static lv_anim_t anim_left_btm_gear;
+static lv_anim_t anim_right_top_gear;
+static lv_anim_t anim_right_btm_gear;
 
 // static uint32_t countdownts = 0;            //倒计时结束的时间戳
 #if !USE_DS1302_RTC
@@ -49,6 +53,8 @@ private:
 
     uint32_t last_timestamp = 0;
 
+    uint8_t clockMode = 0; //0普通时分秒 1隐藏秒的圆弧形
+
 public:
     Genshin_Clock();
 
@@ -65,6 +71,10 @@ public:
     void loop();
 
     void refresh();
+
+    void changeClockMode();
+
+    uint8_t getClockMode();
 
     DateTime getDateTime();
 

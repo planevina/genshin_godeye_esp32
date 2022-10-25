@@ -19,7 +19,8 @@
     #define TFT_DC 10
     #define TFT_RST 21
     #define BTN_PIN 38
-    #define LVGL_AREA 240     // lvgl缓存大小
+    #define LVGL_BUFFER_LEVEL 1     //lvgl缓存大小，1=100%（全屏），2=50%（半屏），3=33.3%（三分之一屏），4=25%（四分之一屏）
+    //修改前需确认分辨率高能被这个数值整除
 
     //#define SD_CS 8
     #define SDMMC_CMD 42
@@ -34,7 +35,7 @@
     #define TFT_DC 27
     #define TFT_RST 33
     #define BTN_PIN 16
-    #define LVGL_AREA 120    // ESP32只能开半屏缓存，就这样还剩10KB可用内存
+    #define LVGL_BUFFER_LEVEL 2    // ESP32只能开半屏缓存，就这样还剩10KB可用内存 
 
     #define SD_MISO 2
     #define SD_SCK 14

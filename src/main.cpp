@@ -7,11 +7,14 @@
 #include "file_io.h"
 #include "clock.h"
 #include "MjpegClass.h"
-
-#define MJPEG_BUFFER_SIZE (240 * 240 * 2 / 4)
+#include "esp32-hal-cpu.h"
 
 #define EYES_FILE_COUNT 7 //总计多少个文件
 #define DEFAULT_BRIGHTNESS 255
+
+#if USE_ESP32S3
+TaskHandle_t Task_Control;
+#endif
 
 uint8_t currPlay = 0;                     //当前播放的文件索引
 bool isBreak = false;                     //是否播放中断
@@ -19,6 +22,7 @@ uint8_t playMode = 0;                     // 0顺序循环 1单个循环 2随机
 uint16_t brightness = DEFAULT_BRIGHTNESS; //屏幕亮度
 int16_t breath_step = 5;                  //亮度步长
 uint8_t currCustomPlay = 0;               //自定义播放的当前索引
+bool useBLE = true;                       //是否打开蓝牙BLE（省电）
 
 String yan = "bcfhlsy";                         //神之眼文件名序列，如要自己定义请改这里和上面的FILE_COUNT
 OneButton btn = OneButton(BTN_PIN, true, true); //初始化按键
@@ -79,7 +83,6 @@ static int jpegDrawCallback(JPEGDRAW *pDraw)
     return 1;
 }
 
-/* Display flushing */
 void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p)
 {
     uint32_t w = (area->x2 - area->x1 + 1);
@@ -98,7 +101,7 @@ void lvgl_init()
 {
     Serial.println("[LVGL] Init start...");
     lv_init();
-    lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, screenWidth * LVGL_AREA);
+    lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, screenWidth * screenHeight / LVGL_BUFFER_LEVEL);
     lv_disp_drv_init(&disp_drv);
     disp_drv.hor_res = screenWidth;
     disp_drv.ver_res = screenHeight;
@@ -111,8 +114,8 @@ void lvgl_init()
 
 bool mem_alloc()
 {
-    disp_draw_buf = (lv_color_t *)heap_caps_malloc(sizeof(lv_color_t) * screenWidth * LVGL_AREA, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    // disp_draw_buf = (lv_color_t *)malloc(sizeof(lv_color_t) * screenWidth * LVGL_AREA);
+    //缓存分配到SRAM上，提高帧率
+    disp_draw_buf = (lv_color_t *)heap_caps_malloc(sizeof(lv_color_t) * screenWidth * screenHeight / LVGL_BUFFER_LEVEL, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!disp_draw_buf)
     {
         Serial.println("[LVGL] Draw buff allocate failed!");
@@ -120,7 +123,6 @@ bool mem_alloc()
         return false;
     }
     mjpeg_buf = (uint8_t *)heap_caps_malloc(screenWidth * screenHeight / 2, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    // mjpeg_buf = (uint8_t *)malloc(MJPEG_BUFFER_SIZE);
     if (!mjpeg_buf)
     {
         Serial.println(F("[MJPEG] Draw buff malloc failed!"));
@@ -133,7 +135,6 @@ bool mem_alloc()
 void singleClickHandler()
 {
     Serial.println("[BTN] Single Click Event");
-    Serial.println(currMode);
     if (currMode == 0)
     {
         //神之眼模式
@@ -150,6 +151,10 @@ void singleClickHandler()
         }
         isBreak = true;
     }
+    else if (currMode == 1)
+    {
+        myclock.changeClockMode();
+    }
     else if (currMode == 2)
     {
         //自定义播放模式，范围0-254
@@ -159,6 +164,7 @@ void singleClickHandler()
         }
     }
 }
+
 void longClickHandler()
 {
     Serial.println("[BTN] Long Click Event");
@@ -174,12 +180,13 @@ void btn_loop()
 {
     btn.tick();
 }
+
 bool ble_sendmsg(String msg = "")
 {
     String rtnMsg = msg;
     //没有参数则回报当前状态
     if (rtnMsg == "")
-        rtnMsg = "_,t" + String(myclock.getTimestamp()) + ",m" + String(currMode) + ",p" + String(currPlay) + ",b" + String(playMode);
+        rtnMsg = "_,t" + String(myclock.getTimestamp()) + ",m" + String(currMode) + ",p" + String(currPlay) + ",b" + String(playMode) + ",c" + String(myclock.getClockMode());
 
     memset(BLEbuf, 0, 32);
     memcpy(BLEbuf, rtnMsg.c_str(), 32);
@@ -269,22 +276,11 @@ void ble_proc()
     }
     else if (ble_rcv_data[5] == 'c')
     {
-        //倒计时模式，参数是1-59的整数，代表分钟
+        //切换时钟模式
         if (currMode == 1)
         {
-            String ts = ble_rcv_data.substring(7);
-            if (isNumber(ts))
-            {
-                int aa = ts.toInt();
-                if (aa >= 1 && aa < 60)
-                {
-                    // start_countdown_clock(aa * 60);
-                }
-            }
-            else
-            {
-                Serial.println("[BLE] Wrong number");
-            }
+            myclock.changeClockMode();
+            ble_sendmsg();
         }
         else
         {
@@ -295,21 +291,23 @@ void ble_proc()
     {
         ble_sendmsg();
     }
-    else if (ble_rcv_data[5] == 'y')
+    else if (ble_rcv_data[5] == 'q')
     {
-        //自定义播放模式PREV，范围0-254
+        //自定义播放模式PREV
         if (currCustomPlay > 0)
         {
             --currCustomPlay;
+            isBreak = true;
         }
     }
-    else if (ble_rcv_data[5] == 'z')
+    else if (ble_rcv_data[5] == 'h')
     {
-        //自定义播放模式NEXT，范围0-254
+        //自定义播放模式NEXT
         if (++currCustomPlay > 254)
         {
             currCustomPlay = 0;
         }
+        isBreak = true;
     }
     else
     {
@@ -336,12 +334,26 @@ void ble_loop()
         Serial.println("[BLE] Client connected");
     }
 }
+
+#if USE_ESP32S3 //蓝牙循环和按键循环用单独的核心0,S3版使用
+void task_control(void *pvParameters)
+{
+    for (;;)
+    {
+        btn_loop();
+        if (useBLE)
+            ble_loop();
+        vTaskDelay(1);
+    }
+}
+#else //控制中断循环，ESP32版使用
 void control_loop()
 {
-    //播放中的回调
     btn_loop();
-    ble_loop();
+    if (useBLE)
+        ble_loop();
 }
+#endif
 
 void breath_brightness()
 {
@@ -357,7 +369,7 @@ void breath_brightness()
     ledcWrite(1, brightness > 255 ? 255 : brightness);
 }
 
-void play_loop(void (*playCallback)())
+void play_loop()
 {
     isBreak = false;
     File mjpegFile;
@@ -404,20 +416,23 @@ void play_loop(void (*playCallback)())
         Serial.println("[MJPEG] Failed to open mjpeg file");
         gfx->fillScreen(BLACK);
         gfx->setTextColor(WHITE);
-        gfx->setCursor(20,100);
-        if(currMode == 0 )
+        gfx->setCursor(20, 100);
+        if (currMode == 0)
         {
             gfx->println("No eyes mjpeg file '/mjpeg/b.mjpeg'.");
             gfx->println("Filename like  'b.mjpeg' 'f.mjpeg'...");
             gfx->println("Pls copy it to 'mjpeg' folder in TF card and reboot");
         }
-        else if(currMode==2)
+        else if (currMode == 2)
         {
             gfx->println("No custom mjpeg file '/custom/my0.mjpeg'.");
             gfx->println("Filename like 'my0.mjpeg' 'my1.mjpeg'...");
             gfx->println("Pls copy it to 'custom' folder  in TF card and reboot");
         }
-        for(;;){}; // 等待重启
+        delay(60000); //延迟一分钟
+        currMode = 1; //跳转时钟模式
+        isReset = true;
+        return;
     }
     else
     {
@@ -428,8 +443,10 @@ void play_loop(void (*playCallback)())
         while (mjpegFile.available() && mjpeg.readMjpegBuf())
         {
             mjpeg.drawJpg();
-            //跳转蓝牙循环和按键循环
-            playCallback();
+            
+#if !USE_ESP32S3
+            control_loop(); //跳转蓝牙循环和按键循环
+#endif
             if (currMode == 0)
             {
                 breath_brightness();
@@ -485,6 +502,24 @@ void setup()
     gfx->fillScreen(BLACK);
     gfx->setTextColor(WHITE);
 
+    //持续长按以禁用蓝牙
+    pinMode(BTN_PIN, INPUT_PULLUP);
+    uint32_t pressTime = millis();
+    while (digitalRead(BTN_PIN) == LOW)
+    {
+        if (millis() - pressTime > 1499)
+        {
+            useBLE = false;
+            gfx->setCursor(10, 100);
+            gfx->setTextSize(2);
+            gfx->println("BLE disabled.");
+            delay(2000);
+            break;
+        }
+        delay(50);
+    }
+    gfx->setTextSize(1);
+
 #if USE_ESP32S3
     isSDOK = sdmmc_init();
     isFFOK = fatfs_init();
@@ -521,13 +556,31 @@ void setup()
     }
     // disp_free_mem("MEM OK");
     lvgl_init();
-    init_ble();
+    if (useBLE)
+        init_ble();
+
+#if USE_ESP32S3
+    //按键及蓝牙用CORE 0执行
+    xTaskCreatePinnedToCore(task_control, "Task_Control", 4096, NULL, 1, &Task_Control, 0);
+    Serial.println("[TASK] CONTROL USE CORE 0");
+#endif
     disp_free_mem("INIT OK");
+}
+
+// lvgl单独的核心循环任务（实测帧率并没有提升，未使用）
+void task_lvgl(void *pvParameters)
+{
+    for (;;)
+    {
+        if (currMode == 1)
+            lv_timer_handler();
+        vTaskDelay(1);
+    }
 }
 
 void loop()
 {
-    if (currMode == 1)
+    if (currMode == 1) //时钟模式
     {
         if (isReset)
         {
@@ -538,12 +591,16 @@ void loop()
             {
                 myclock.initClock();
             }
-            // disp_free_mem("CLOCK MODE");
+            //disp_free_mem("CLOCK MODE");
+            if (getCpuFrequencyMhz() != 240)
+            {
+                setCpuFrequencyMhz(240);
+            }
         }
         myclock.loop();
         lv_timer_handler();
     }
-    else if (currMode == 0)
+    else if (currMode == 0) //神之眼
     {
         //播放神之眼
         if (isReset)
@@ -557,13 +614,16 @@ void loop()
                 isSDOK = sd_init();
 #endif
             }
-            // disp_free_mem("EYE MODE");
+            //disp_free_mem("EYE MODE");
+            if (getCpuFrequencyMhz() != 160)
+            {
+                setCpuFrequencyMhz(160);
+            }
         }
-        play_loop(control_loop);
+        play_loop();
     }
-    else if (currMode == 2)
+    else if (currMode == 2) //播放自定义文件
     {
-        //播放自定义文件
         if (isReset)
         {
             isReset = false;
@@ -577,8 +637,14 @@ void loop()
                 isSDOK = sd_init();
 #endif
             }
+            if (getCpuFrequencyMhz() != 160)
+            {
+                setCpuFrequencyMhz(160);
+            }
         }
-        play_loop(control_loop);
+        play_loop();
     }
+#if !USE_ESP32S3
     control_loop();
+#endif
 }

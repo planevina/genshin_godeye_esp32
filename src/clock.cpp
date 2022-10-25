@@ -9,7 +9,8 @@ Genshin_Clock::Genshin_Clock()
 {
 #if USE_DS1302_RTC
     ds1302.begin();
-    if (ds1302.isrunning()) {
+    if (ds1302.isrunning())
+    {
         Serial.println("[RTC] DS1302 is running!");
     }
     else
@@ -45,7 +46,7 @@ void Genshin_Clock::initClock()
     lv_img_set_src(lvHour, &hand_h);
     lv_obj_align(lvHour, LV_ALIGN_CENTER, 0, -44);
     lv_img_set_pivot(lvHour, 16, 81);
-    lv_img_set_angle(lvHour, hr * 300 + (clock_time.minute() / 12) * 60);
+    lv_img_set_angle(lvHour, hr * 300 + clock_time.minute() * 5);
 
     lvMinute = lv_img_create(lv_scr_act());
     lv_img_set_src(lvMinute, &hand_m);
@@ -58,6 +59,30 @@ void Genshin_Clock::initClock()
     lv_obj_align(lvSecond, LV_ALIGN_CENTER, 0, -58);
     lv_img_set_pivot(lvSecond, 6, 110);
     lv_img_set_angle(lvSecond, clock_time.second() * 60);
+
+    //计算圆弧起点和终点
+    uint16_t min_ang = clock_time.minute() >= 15 ? (clock_time.minute() - 15) * 6 : 270 + clock_time.minute() * 6;
+    uint16_t hour_ang = hr >= 3 ? hr * 30 + clock_time.minute() / 2 - 90 : hr * 30 + clock_time.minute() / 2 + 270;
+
+    //初始化圆弧
+    arc = lv_arc_create(lv_scr_act());
+    lv_arc_set_mode(arc, LV_ARC_MODE_NORMAL);
+    lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_arc_set_bg_start_angle(arc, min_ang);
+    lv_arc_set_bg_end_angle(arc, hour_ang);
+
+    lv_obj_set_size(arc, 192, 192);
+    lv_obj_align(arc, LV_ALIGN_CENTER, 0, 0);
+    lv_style_init(&arc_style);
+    lv_style_set_arc_img_src(&arc_style, &arc_mask);
+    lv_style_set_arc_width(&arc_style, 4);
+    lv_style_set_arc_rounded(&arc_style, false);
+    lv_obj_add_style(arc, &arc_style, 0);
+    lv_obj_center(arc);
+
+    lv_obj_add_flag(arc, LV_OBJ_FLAG_HIDDEN);
 
     _isClockInit = true;
 }
@@ -77,9 +102,9 @@ void Genshin_Clock::initClockBg()
     lv_obj_t *bgimg = lv_img_create(lv_scr_act());
 
 #if USE_ESP32S3
-    lv_img_set_src(bgimg, &star_bg); //S3直接用196x196的背景图
+    lv_img_set_src(bgimg, &star_bg); // S3直接用196x196的背景图
 #else
-    lv_img_set_src(bgimg, &star_bg_98); //ESP32用一张98x98的图来放大，节约空间
+    lv_img_set_src(bgimg, &star_bg_98); // ESP32用一张98x98的图来放大，节约空间
     lv_img_set_zoom(bgimg, 512);
 #endif
     lv_obj_align(bgimg, LV_ALIGN_CENTER, 0, 0);
@@ -109,12 +134,7 @@ void Genshin_Clock::initClockBg()
     lv_img_set_src(mask_img, &star_mask);
     lv_obj_align(mask_img, LV_ALIGN_CENTER, 0, 0);
 
-    //新建动画效果，如果要调整速度需要把这里提到全局变量
-    lv_anim_t anim_center_gear;
-    lv_anim_t anim_left_btm_gear;
-    lv_anim_t anim_right_top_gear;
-    lv_anim_t anim_right_btm_gear;
-
+    //齿轮动画效果
     lv_anim_init(&anim_center_gear);
     lv_anim_set_var(&anim_center_gear, center_gear);
     lv_anim_set_exec_cb(&anim_center_gear, rotate_img);
@@ -162,33 +182,23 @@ void Genshin_Clock::refresh()
     clock_time = getDateTime();
     uint8_t hr = clock_time.hour();
     if (hr == 0)
-    {
         hr = 12;
-    }
     else if (hr > 12)
-    {
         hr -= 12;
-    }
     lv_img_set_angle(lvHour, hr * 300 + clock_time.minute() * 5);
-    lv_img_set_angle(lvMinute, clock_time.minute() * 60);
-    lv_img_set_angle(lvSecond, clock_time.second() * 60);
-    /* //倒计时模式由于实在太卡，无法做到
-    if (isCountdown)
+    if (clockMode == 0)
     {
-        if (countdownts > currtimestamp)
-        {
-            lv_arc_set_bg_start_angle(arc, (clock_time.minute() >= 15 ? (clock_time.minute() - 15) * 6 : 270 + clock_time.minute() * 6)); //+ clock_time.getSeconds()/10
-        }
-        else
-        {
-            quit_countdown_clock();
-        }
+        //模式0 为 时分秒，步进式
+        lv_img_set_angle(lvSecond, clock_time.second() * 60);
+        lv_img_set_angle(lvMinute, clock_time.minute() * 60);
     }
     else
     {
-        lv_img_set_angle(lvSecond, clock_time.second() * 60);
+        //模式1 为时分，平滑式
+        lv_img_set_angle(lvMinute, clock_time.minute() * 60 + clock_time.second());
+        lv_arc_set_bg_start_angle(arc, clock_time.minute() >= 15 ? (clock_time.minute() - 15) * 6 + clock_time.second() / 10 : 270 + clock_time.minute() * 6 + +clock_time.second() / 10);
+        lv_arc_set_bg_end_angle(arc, hr >= 3 ? hr * 30 + clock_time.minute() / 2 - 90 : hr * 30 + clock_time.minute() / 2 + 270);
     }
-    */
 }
 
 /**
@@ -246,14 +256,12 @@ bool Genshin_Clock::isTimeChanged()
 #endif
 }
 
-
 #if !USE_DS1302_RTC
 void Genshin_Clock::timestampAdd()
 {
     currtimestamp++;
 }
 #endif
-
 
 /**
  * @brief 获取系统时间戳
@@ -278,65 +286,49 @@ bool Genshin_Clock::isClockInit()
     return _isClockInit;
 }
 
-/*
-void start_countdown_clock(uint32_t ct)
+/**
+ * @brief 改变时钟模式
+ */
+void Genshin_Clock::changeClockMode()
 {
-    if (isCountdown)
-        return;
-    countdownts = currtimestamp + ct;
-    clock_time = DateTime(currtimestamp);
-    uint16_t ang1 = clock_time.minute() >= 15 ? (clock_time.minute() - 15) * 6 : 270 + clock_time.minute() * 6;
-    uint16_t ang2 = ang1 + ct / 10;
-    if (ang2 > 360)
-        ang2 -= 360;
+    clockMode = clockMode == 0 ? 1 : 0;
+    if (clockMode == 0)
+    {
+        //还原速度
+        lv_anim_set_time(&anim_center_gear, 75000);
+        lv_anim_set_time(&anim_left_btm_gear, 75000);
+        lv_anim_set_time(&anim_right_top_gear, 75000);
+        lv_anim_set_time(&anim_right_btm_gear, 50000);
+        lv_anim_start(&anim_center_gear);
+        lv_anim_start(&anim_left_btm_gear);
+        lv_anim_start(&anim_right_top_gear);
+        lv_anim_start(&anim_right_btm_gear);
+        lv_obj_add_flag(arc, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(lvSecond, LV_OBJ_FLAG_HIDDEN);
+    }
+    else if (clockMode == 1)
+    {
+        //加快背景齿轮运动速度，因为实在是太卡了，所以只提升到3倍速
+        //如要完全还原游戏中的快进速度，需要提升到10倍，也就是7500，5000
+        lv_anim_set_time(&anim_center_gear, 25000);
+        lv_anim_set_time(&anim_left_btm_gear, 25000);
+        lv_anim_set_time(&anim_right_top_gear, 25000);
+        lv_anim_set_time(&anim_right_btm_gear, 20000);
+        lv_anim_start(&anim_center_gear);
+        lv_anim_start(&anim_left_btm_gear);
+        lv_anim_start(&anim_right_top_gear);
+        lv_anim_start(&anim_right_btm_gear);
 
-    arc = lv_arc_create(lv_scr_act());
-    lv_arc_set_mode(arc, LV_ARC_MODE_NORMAL);
-    lv_obj_remove_style(arc, NULL, LV_PART_KNOB); //不显示顶端的圆头
-    lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE);
-
-    lv_arc_set_bg_start_angle(arc, ang1); //
-    lv_arc_set_bg_end_angle(arc, ang2);
-
-    lv_obj_set_size(arc, 192, 192);
-    // lv_obj_align(arc, LV_ALIGN_CENTER, 0, 0);
-    lv_style_init(&arc_style);                       //初始化样式
-    lv_style_set_arc_img_src(&arc_style, &arc_mask); //设置圆弧颜色
-    lv_style_set_arc_width(&arc_style, 4);           //设置圆弧的宽度
-    lv_style_set_arc_rounded(&arc_style, false);     //圆弧末端方形
-    lv_obj_add_style(arc, &arc_style, 0);            //将样式添加到圆弧中
-    lv_obj_center(arc);
-    lv_obj_add_flag(lvSecond, LV_OBJ_FLAG_HIDDEN); //不显示秒针
-
-    lv_anim_set_time(&anim_center_gear, 6000);
-    lv_anim_set_time(&anim_left_btm_gear, 6000);
-    lv_anim_set_time(&anim_right_top_gear, 6000);
-    lv_anim_set_time(&anim_right_btm_gear, 4000);
-    lv_anim_start(&anim_center_gear);
-    lv_anim_start(&anim_left_btm_gear);
-    lv_anim_start(&anim_right_top_gear);
-    lv_anim_start(&anim_right_btm_gear);
-    isCountdown = true;
-    Serial.println("Start countdown");
+        //隐藏秒针
+        lv_obj_add_flag(lvSecond, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(arc, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
-
-void quit_countdown_clock()
+/**
+ * @brief 获取时钟模式
+ */
+uint8_t Genshin_Clock::getClockMode()
 {
-    if (!isCountdown)
-        return;
-    lv_obj_del(arc);
-    lv_obj_clear_flag(lvSecond, LV_OBJ_FLAG_HIDDEN);
-    lv_anim_set_time(&anim_center_gear, 75000);
-    lv_anim_set_time(&anim_left_btm_gear, 75000);
-    lv_anim_set_time(&anim_right_top_gear, 75000);
-    lv_anim_set_time(&anim_right_btm_gear, 50000);
-    lv_anim_start(&anim_center_gear);
-    lv_anim_start(&anim_left_btm_gear);
-    lv_anim_start(&anim_right_top_gear);
-    lv_anim_start(&anim_right_btm_gear);
-    countdownts = 0;
-    isCountdown = false;
-    Serial.println("Quit countdown");
+    return clockMode;
 }
-*/

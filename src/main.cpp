@@ -567,17 +567,6 @@ void setup()
     disp_free_mem("INIT OK");
 }
 
-// lvgl单独的核心循环任务（实测帧率并没有提升，未使用）
-void task_lvgl(void *pvParameters)
-{
-    for (;;)
-    {
-        if (currMode == 1)
-            lv_timer_handler();
-        vTaskDelay(1);
-    }
-}
-
 void loop()
 {
     if (currMode == 1) //时钟模式

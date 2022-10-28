@@ -21,8 +21,8 @@ PCB基于[小渣渣大佬的稻妻蒙德神之眼1.2板](https://oshwhub.com/Myz
 如果不想自己编译，可直接用编译好的固件烧录
 --
 烧录工具：flash_download_tool 3.9.3  
-严格按照目录内的扫路说明填写地址（坑，s3的bootloader地址与esp32不同）     
-esp32版可直刷小渣渣原版1.2版本的pcb
+严格按照目录内的烧录说明填写地址（坑，s3的bootloader地址与esp32不同）     
+esp32版可直刷小渣渣原版1.2版本的pcb   
 esp32-s3版我只编译了16m flash版本（因为可以内置一个神之眼文件）   
 
 

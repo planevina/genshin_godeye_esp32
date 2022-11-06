@@ -65,6 +65,9 @@ USB DFU On Boot "Disabled"
 Upload Mode "UART0 / Hardware CDC"  
 USB CDC On Boot (如果需要调试则打开，否则禁用，如果打开了这个选项但是不连接串口，在有串口输出的地方会卡顿1秒左右）  
 
+如果是全新的模组，第一次上电需按住BOOT按钮（或者用什么东西短接一下再上电），以进入下载模式  
+（如果不这样做，电脑就会不停的提示找到usb口）  
+
 
 小程序
 --

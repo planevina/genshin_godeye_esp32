@@ -2,6 +2,9 @@
 #ifndef BOARD_CONF_H
 #define BOARD_CONF_H
 
+//璃月版改为1
+#define USE_LIYUE 0
+
 //ESP32版请将以下选项都改为0
 //S3版，如果没有焊接时钟芯片，下面这个也要改为0
 

@@ -24,17 +24,21 @@ int16_t breath_step = 5;                  //亮度步长
 uint8_t currCustomPlay = 0;               //自定义播放的当前索引
 bool useBLE = true;                       //是否打开蓝牙BLE（省电）
 
-String yan = "bcfhlsy";                         //神之眼文件名序列，如要自己定义请改这里和上面的FILE_COUNT
-OneButton btn = OneButton(BTN_PIN, true, true); //初始化按键
-
-Arduino_DataBus *bus = new Arduino_HWSPI(TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, TFT_MISO);
-Arduino_GC9A01 *gfx = new Arduino_GC9A01(bus, TFT_RST, 0 /*默认不旋转了，2为旋转180度*/, true);
-
-static MjpegClass mjpeg;
-
 const uint32_t screenWidth = 240;
 const uint32_t screenHeight = 240;
 
+String yan = "bcfhlsy";                         //神之眼文件名序列，如要自己定义请改这里和上面的FILE_COUNT
+OneButton btn = OneButton(BTN_PIN, true, true); //初始化按键
+Arduino_DataBus *bus = new Arduino_HWSPI(TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, TFT_MISO);
+
+//初始化不同的屏幕
+#if USE_LIYUE
+Arduino_ST7789 *gfx = new Arduino_ST7789(bus, TFT_RST, 0, true, screenWidth, screenHeight);
+#else
+Arduino_GC9A01 *gfx = new Arduino_GC9A01(bus, TFT_RST, 0 , true); //第三个是旋转0=不旋转 1=90度 2=180度 3=270度
+#endif
+
+static MjpegClass mjpeg;
 static lv_disp_draw_buf_t draw_buf;
 static lv_color_t *disp_draw_buf;
 static lv_disp_drv_t disp_drv;

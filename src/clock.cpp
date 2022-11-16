@@ -7,6 +7,12 @@ DS1302 ds1302(39, 2, 1);
 
 Genshin_Clock::Genshin_Clock()
 {
+
+}
+
+
+void Genshin_Clock::begin()
+{
 #if USE_DS1302_RTC
     ds1302.begin();
     if (ds1302.isrunning())

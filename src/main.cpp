@@ -548,9 +548,13 @@ void setup()
     btn.attachClick(singleClickHandler);
     btn.attachLongPressStop(longClickHandler);
 
-#if !USE_DS1302_RTC
+
+#if USE_DS1302_RTC
+    myclock.begin();
+#else
     timestampticker.attach(1, Genshin_Clock::timestampAdd); //没有时钟芯片用Ticker计时
 #endif
+
     if (!mem_alloc()) //给mjpeg和lvgl分配内存
     {
         Serial.println("Memory alloc failed!");

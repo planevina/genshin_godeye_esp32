@@ -58,6 +58,8 @@ private:
 public:
     Genshin_Clock();
 
+    void begin();
+
     void setDateTime(uint32_t timestamp);
 
     void initClock();

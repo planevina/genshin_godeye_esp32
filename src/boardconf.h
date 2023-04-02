@@ -1,20 +1,19 @@
-
 #ifndef BOARD_CONF_H
 #define BOARD_CONF_H
 
-//璃月版改为1
-#define USE_LIYUE 0
+//璃月版
+#define LIYUE_VER 1
 
 //ESP32版请将以下选项都改为0
 //S3版，如果没有焊接时钟芯片，下面这个也要改为0
 
 //启用RTC时钟
-#define USE_DS1302_RTC 1
+#define USE_DS1302_RTC 0
 
 //使用S3模组
-#define USE_ESP32S3 1
+#define USE_ESP32S3 0
 #if USE_ESP32S3
-    #define TFT_MISO 9        //没有实际连接
+    #define TFT_MISO -1        //没有实际连接
     #define TFT_SCK 12
     #define TFT_MOSI 13
     #define TFT_CS 11
@@ -37,8 +36,12 @@
     #define TFT_BLK 22
     #define TFT_DC 27
     #define TFT_RST 33
+#if LIYUE_VER
+    #define BTN_PIN 23
+#else
     #define BTN_PIN 16
-    #define LVGL_BUFFER_LEVEL 2    // ESP32只能开半屏缓存，就这样还剩10KB可用内存 
+#endif
+    #define LVGL_BUFFER_LEVEL 3    // ESP32只能开半屏缓存，就这样还剩10KB可用内存 
 
     #define SD_MISO 2
     #define SD_SCK 14

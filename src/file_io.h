@@ -59,7 +59,7 @@ bool sdmmc_init()
 
 bool fatfs_init(){
     if(!FFat.begin(false, "", 1)){
-        Serial.println("[FATFS] FFat Mount Failed");
+        Serial.println("[FATFS] NO FATFS.");
         return false;
     }
     Serial.printf("[FATFS] Total space: %10lu\n", FFat.totalBytes());
